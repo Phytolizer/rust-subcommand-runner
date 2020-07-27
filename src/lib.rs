@@ -1,7 +1,11 @@
 use chrono::Utc;
 use crossbeam_channel::Sender;
 use stateful::run_with_status;
-use std::{error::Error, path::Path, process::{Output, Command}};
+use std::{
+    error::Error,
+    path::Path,
+    process::{Command, Output},
+};
 
 pub fn cd_and_run<S, P>(
     command: S,
@@ -50,7 +54,7 @@ pub fn run<S>(
     done_message_sender: &Sender<String>,
     start_sender: &Sender<()>,
     done_sender: &Sender<()>,
-) -> Result<(), Box<dyn Error>>
+) -> Result<Output, Box<dyn Error>>
 where
     S: AsRef<str>,
 {
@@ -59,25 +63,23 @@ where
 
     let mut cmd_to_run = Command::new(command_parts[0]);
     cmd_to_run.args(&command_parts[1..]);
-    run_command(
+    Ok(run_command(
         cmd_to_run,
         command,
         message_sender,
         done_message_sender,
         start_sender,
         done_sender,
-    )?;
-    Ok(())
+    )?)
 }
 
-pub fn run_no_spinner<S: AsRef<str>>(command: S) -> Result<(), Box<dyn Error>> {
+pub fn run_no_spinner<S: AsRef<str>>(command: S) -> Result<Output, Box<dyn Error>> {
     let command = command.as_ref();
     let command_parts: Vec<_> = command.split_whitespace().collect();
 
     let mut cmd_to_run = Command::new(command_parts[0]);
     cmd_to_run.args(&command_parts[1..]);
-    run_command_no_spinner(cmd_to_run, command)?;
-    Ok(())
+    Ok(run_command_no_spinner(cmd_to_run, command)?)
 }
 
 pub fn run_command<S: AsRef<str>>(
