@@ -1,0 +1,12 @@
+[package]
+name = "subcommand-runner"
+version = "1.0.0"
+authors = ["kyle_coffey <kyle_coffey@affirmednetworks.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[dependencies]
+crossbeam-channel = "0.4"
+chrono = "0.4"
+stateful = { version = "1.0", git = "https://github.com/onContentStop/rust-stateful.git" }
+error-chain = "0.12"
