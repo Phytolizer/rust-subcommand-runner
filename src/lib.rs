@@ -10,6 +10,7 @@ use std::{
     thread,
 };
 
+#[derive(Copy, Clone)]
 pub struct SpinnerVars<'sp, S>
 where
     S: AsRef<str>,
