@@ -5,7 +5,7 @@ use std::{
     error::Error,
     io::{self, BufRead, BufReader, Read},
     path::Path,
-    process::{Command, Output},
+    process::{Command, Output, Stdio},
     sync::Arc,
     thread,
 };
@@ -94,6 +94,7 @@ where
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
+    command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
     let output = match spinner_vars {
         Some(sv) => {
