@@ -101,7 +101,9 @@ where
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
-    command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    if let Some(_) = spinner_vars {
+        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+    }
 
     let output = match spinner_vars {
         Some(sv) => {
@@ -120,7 +122,10 @@ where
             sv.deactivate_sender.send(())?;
             output
         }
-        None => _run_internal(command, show_output)?,
+        None => {
+            let child = command.spawn()?;
+            child.wait_with_output()?
+        }
     };
 
     Ok(output)
