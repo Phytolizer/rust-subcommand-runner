@@ -67,7 +67,7 @@ where
                     _ => {
                         dbg!(&buf);
                         *vec.lock() = buf;
-                        dbg!(&vec);
+                        dbg!(vec.lock());
                     }
                 },
             }
