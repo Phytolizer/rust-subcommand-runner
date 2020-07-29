@@ -79,15 +79,16 @@ where
     (out, receiver)
 }
 
-pub fn run<S, P>(
+pub fn run<S, S2, P>(
     command_name: S,
-    spinner_vars: Option<SpinnerVars<S>>,
+    spinner_vars: Option<SpinnerVars<S2>>,
     command: Option<Command>,
     show_output: bool,
     cwd: Option<P>,
 ) -> Result<Output, Box<dyn Error>>
 where
     S: AsRef<str>,
+    S2: AsRef<str>,
     P: AsRef<Path>,
 {
     let command_name = command_name.as_ref();
@@ -101,7 +102,7 @@ where
     if let Some(cwd) = cwd {
         command.current_dir(cwd);
     }
-    if let Some(_) = spinner_vars {
+    if spinner_vars.is_some() {
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
     }
 
