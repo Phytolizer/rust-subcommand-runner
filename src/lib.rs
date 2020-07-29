@@ -59,12 +59,15 @@ where
             let mut buf = Vec::with_capacity(1);
             match reader.read_until(b'\n', &mut buf) {
                 Err(e) => {
-                    eprintln!("line {}: Error reading from stream: {}", line!(), e);
+                    eprintln!("{}}} Error reading from stream: {}", line!(), e);
                     break;
                 }
                 Ok(got) => match got {
                     0 => break,
-                    _ => *vec.lock() = buf,
+                    _ => {
+                        dbg!(&buf);
+                        *vec.lock() = buf;
+                    }
                 },
             }
         })
