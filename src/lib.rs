@@ -6,7 +6,7 @@ use std::{
     io::{self, BufRead, BufReader, Read},
     path::Path,
     process::{Command, Output, Stdio},
-    sync::Arc,
+    sync::{mpsc::channel, mpsc::Receiver, Arc},
     thread,
 };
 
@@ -46,34 +46,37 @@ where
     }
 }
 
-fn child_stream_to_lines<R>(stream: R) -> Arc<Mutex<Vec<u8>>>
+fn child_stream_to_lines<R>(stream: R) -> (Arc<Mutex<Vec<u8>>>, Receiver<()>)
 where
     R: Read + Send + 'static,
 {
     let out = Arc::new(Mutex::new(vec![]));
     let vec = out.clone();
     let mut reader = BufReader::new(stream);
+    let (sender, receiver) = channel::<()>();
     thread::Builder::new()
         .name("child_stream_to_vec".into())
-        .spawn(move || loop {
-            let mut buf = Vec::with_capacity(1);
-            match reader.read_until(b'\n', &mut buf) {
-                Err(e) => {
-                    eprintln!("{}}} Error reading from stream: {}", line!(), e);
-                    break;
-                }
-                Ok(got) => match got {
-                    0 => break,
-                    _ => {
-                        dbg!(&buf);
-                        *vec.lock() = buf;
-                        dbg!(vec.lock());
+        .spawn(move || {
+            loop {
+                let mut buf = Vec::with_capacity(1);
+                match reader.read_until(b'\n', &mut buf) {
+                    Err(e) => {
+                        eprintln!("{}}} Error reading from stream: {}", line!(), e);
+                        break;
                     }
-                },
+                    Ok(got) => match got {
+                        0 => break,
+                        _ => {
+                            let mut lock = vec.lock();
+                            *lock = buf;
+                        }
+                    },
+                }
             }
+            sender.send(()).unwrap_or_else(|_| {});
         })
         .unwrap_or_else(|_| panic!("{}}} Could not spawn thread", line!()));
-    out
+    (out, receiver)
 }
 
 pub fn run<S, P>(
@@ -126,10 +129,10 @@ where
 fn _run_internal(mut command: Command, show_output: bool) -> Result<Output, Box<dyn Error>> {
     let mut child = command.spawn()?;
     if show_output {
-        let out = child_stream_to_lines(child.stdout.take().unwrap());
-        let err = child_stream_to_lines(child.stderr.take().unwrap());
+        let (out, out_done) = child_stream_to_lines(child.stdout.take().unwrap());
+        let (err, err_done) = child_stream_to_lines(child.stderr.take().unwrap());
 
-        while child.try_wait().is_err() {
+        loop {
             let mut outl = out.lock();
             let mut errl = err.lock();
             if !outl.is_empty() || !errl.is_empty() {
@@ -141,6 +144,11 @@ fn _run_internal(mut command: Command, show_output: bool) -> Result<Output, Box<
             }
             outl.clear();
             errl.clear();
+            if out_done.try_recv().is_ok() {
+                // silence "unused" warning
+                drop(err_done);
+                break;
+            }
         }
     }
     let output = child.wait_with_output()?;
@@ -149,8 +157,14 @@ fn _run_internal(mut command: Command, show_output: bool) -> Result<Output, Box<
 
 #[cfg(test)]
 mod tests {
+    use super::*;
     #[test]
     fn it_works() {
         assert_eq!(2 + 2, 4);
+    }
+
+    #[test]
+    fn test_run() {
+        run::<_, &Path>("echo test", None, None, true, None).unwrap();
     }
 }
