@@ -44,6 +44,22 @@ where
             deactivate_sender,
         }
     }
+
+    pub fn set_status_message_override(&mut self, status_message_override: S) {
+        self.status_message_override = Some(status_message_override);
+    }
+
+    pub fn reset_status_message_override(&mut self) {
+        self.status_message_override = None;
+    }
+
+    pub fn set_done_message_override(&mut self, done_message_override: S) {
+        self.done_message_override = Some(done_message_override);
+    }
+
+    pub fn reset_done_message_override(&mut self) {
+        self.done_message_override = None;
+    }
 }
 
 fn child_stream_to_lines<R>(stream: R) -> (Arc<Mutex<Vec<u8>>>, Receiver<()>)
