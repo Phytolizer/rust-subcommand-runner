@@ -1,6 +1,6 @@
-use crossbeam_channel::Sender;
 use io::Write;
 use parking_lot::Mutex;
+use stateful::SpinnerCommunicator;
 use std::{
     error::Error,
     io::{self, BufRead, BufReader, Read},
@@ -9,58 +9,6 @@ use std::{
     sync::{mpsc::channel, mpsc::Receiver, Arc},
     thread,
 };
-
-#[derive(Copy, Clone)]
-pub struct SpinnerVars<'sp, S>
-where
-    S: AsRef<str>,
-{
-    status_message_sender: &'sp Sender<String>,
-    status_message_override: Option<S>,
-    done_message_sender: &'sp Sender<String>,
-    done_message_override: Option<S>,
-    activate_sender: &'sp Sender<()>,
-    deactivate_sender: &'sp Sender<()>,
-}
-
-impl<'sp, S> SpinnerVars<'sp, S>
-where
-    S: AsRef<str>,
-{
-    pub fn new(
-        status_message_sender: &'sp Sender<String>,
-        status_message_override: Option<S>,
-        done_message_sender: &'sp Sender<String>,
-        done_message_override: Option<S>,
-        activate_sender: &'sp Sender<()>,
-        deactivate_sender: &'sp Sender<()>,
-    ) -> Self {
-        Self {
-            status_message_sender,
-            status_message_override,
-            done_message_sender,
-            done_message_override,
-            activate_sender,
-            deactivate_sender,
-        }
-    }
-
-    pub fn set_status_message_override(&mut self, status_message_override: S) {
-        self.status_message_override = Some(status_message_override);
-    }
-
-    pub fn reset_status_message_override(&mut self) {
-        self.status_message_override = None;
-    }
-
-    pub fn set_done_message_override(&mut self, done_message_override: S) {
-        self.done_message_override = Some(done_message_override);
-    }
-
-    pub fn reset_done_message_override(&mut self) {
-        self.done_message_override = None;
-    }
-}
 
 fn child_stream_to_lines<R>(stream: R) -> (Arc<Mutex<Vec<u8>>>, Receiver<()>)
 where
@@ -95,53 +43,48 @@ where
     (out, receiver)
 }
 
-pub fn run<S, S2, P>(
-    command_name: S,
-    spinner_vars: Option<SpinnerVars<S2>>,
-    command: Option<Command>,
-    show_output: bool,
-    cwd: Option<P>,
-) -> Result<Output, Box<dyn Error>>
-where
-    S: AsRef<str>,
-    S2: AsRef<str>,
-    P: AsRef<Path>,
-{
-    let command_name = command_name.as_ref();
-    let command_and_args: Vec<_> = command_name.split_whitespace().collect();
-    let mut command = command.unwrap_or_else(|| {
-        let mut command = Command::new(command_and_args[0]);
-        command.args(&command_and_args[1..]);
-        command
-    });
+pub fn command_from_str(s: &str) -> Command {
+    let split = s.split_whitespace().collect::<Vec<_>>();
+    let mut command = Command::new(split[0]);
+    command.args(&split[1..]);
+    command
+}
 
-    if let Some(cwd) = cwd {
+pub fn run(
+    mut command: Command,
+    spinner_communicator: Option<&SpinnerCommunicator>,
+    status_message: Option<&str>,
+    done_message: Option<&str>,
+    show_output: bool,
+    chdir: Option<&Path>,
+) -> Result<Output, Box<dyn Error>> {
+    if let Some(cwd) = chdir {
         command.current_dir(cwd);
     }
-    if spinner_vars.is_some() {
+    if show_output && spinner_communicator.is_some() {
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
     }
 
-    let output = match spinner_vars {
-        Some(sv) => {
-            sv.status_message_sender.send(
-                sv.status_message_override
-                    .map(|s| s.as_ref().to_string())
-                    .unwrap_or_else(|| command_name.to_string()),
-            )?;
-            sv.done_message_sender.send(
-                sv.done_message_override
-                    .map(|s| s.as_ref().to_string())
-                    .unwrap_or_else(|| command_name.to_string()),
-            )?;
-            sv.activate_sender.send(())?;
+    let output = match spinner_communicator {
+        Some(sc) => {
+            if let Some(msg) = status_message {
+                sc.send_status_message(msg)?;
+            }
+            if let Some(msg) = done_message {
+                sc.send_done_message(msg)?;
+            }
+            sc.activate()?;
             let output = _run_internal(command, show_output)?;
-            sv.deactivate_sender.send(())?;
+            sc.deactivate()?;
             output
         }
         None => {
-            let child = command.spawn()?;
-            child.wait_with_output()?
+            if show_output {
+                let child = command.spawn()?;
+                child.wait_with_output()?
+            } else {
+                command.output()?
+            }
         }
     };
 
@@ -180,6 +123,7 @@ fn _run_internal(mut command: Command, show_output: bool) -> Result<Output, Box<
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
     #[test]
     fn it_works() {
         assert_eq!(2 + 2, 4);
@@ -187,6 +131,22 @@ mod tests {
 
     #[test]
     fn test_run() {
-        run::<_, &Path>("echo test", None, None, true, None).unwrap();
+        run(command_from_str("echo test"), None, None, None, true, None).unwrap();
+
+        let spinner_communicator =
+            stateful::spawn_spinner(&["/", "-", "\\", "|", "*"], Duration::from_millis(100));
+
+        run(
+            command_from_str("sleep 5"),
+            Some(&spinner_communicator),
+            Some("Waiting for something to happen..."),
+            Some("Something definitely happened."),
+            true,
+            None,
+        )
+        .unwrap();
+
+        thread::sleep(Duration::from_millis(100));
+        spinner_communicator.stop().unwrap();
     }
 }
