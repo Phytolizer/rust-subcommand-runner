@@ -61,7 +61,7 @@ pub fn run(
     if let Some(cwd) = chdir {
         command.current_dir(cwd);
     }
-    if show_output && spinner_communicator.is_some() {
+    if spinner_communicator.is_some() || !show_output {
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
     }
 
